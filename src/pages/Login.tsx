@@ -34,18 +34,29 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <div className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden">
+      {/* Background Image with Overlay */}
+      <div 
+        className="absolute inset-0 z-0 bg-cover bg-center transition-transform duration-[20000ms] hover:scale-110"
+        style={{ 
+          backgroundImage: 'url("https://images.unsplash.com/photo-1558769132-cb1aea458c5e?q=80&w=1920&auto=format&fit=crop")',
+        }}
+      />
+      <div className="absolute inset-0 bg-primary/40 backdrop-blur-[2px] z-0" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 z-0" />
+
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 md:p-12"
+        className="w-full max-w-md bg-white/95 backdrop-blur-xl rounded-[2.5rem] shadow-2xl p-8 md:p-12 relative z-10 border border-white/20"
       >
         <div className="flex flex-col items-center mb-10">
-          <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg shadow-primary/20">
-            <LogIn size={32} />
+          <div className="w-20 h-20 bg-primary rounded-3xl flex items-center justify-center text-white mb-6 shadow-2xl shadow-primary/40 rotate-3 hover:rotate-0 transition-transform duration-500">
+            <LogIn size={40} />
           </div>
-          <h1 className="text-2xl font-black text-charcoal uppercase tracking-tighter">StitchFlow POS</h1>
-          <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1">Industrial Billing System</p>
+          <h1 className="text-3xl font-black text-charcoal uppercase tracking-tighter leading-none mb-2">StitchFlow POS</h1>
+          <div className="h-1 w-12 bg-primary rounded-full mb-3" />
+          <p className="text-[10px] text-primary font-black uppercase tracking-[0.3em]">Garment Industry Billing</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">

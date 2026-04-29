@@ -93,8 +93,11 @@ const Shell: React.FC<ShellProps> = ({ children, user, onLogout }) => {
         </button>
         <div className="px-2">
           <p className="text-[10px] text-blue-200/40 uppercase tracking-tight leading-tight">
-            A Product of<br />
-            <span className="font-bold text-blue-100/60 text-[9px]">Digital Communique Private Limited</span>
+            Developed by<br />
+            <span className="font-black text-blue-100 text-[10px] bg-white/10 px-2 py-0.5 rounded-md mt-1 inline-block">Digital Communique Private Limited</span>
+          </p>
+          <p className="text-[9px] text-blue-200/30 uppercase tracking-widest font-black mt-3">
+            Garment Billing Specialist 2026
           </p>
         </div>
       </div>
@@ -166,6 +169,21 @@ const Shell: React.FC<ShellProps> = ({ children, user, onLogout }) => {
         <div className="p-6 lg:p-10 pb-16 flex-1">
           {children}
         </div>
+
+        <footer className="px-6 lg:px-10 py-6 border-t border-slate-100 bg-white/50 backdrop-blur-sm mt-auto">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex flex-col">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Architecture by</p>
+              <p className="text-sm font-black text-primary uppercase tracking-tighter bg-primary/5 px-3 py-1 rounded-full border border-primary/10">
+                Digital Communique Private Limited
+              </p>
+            </div>
+            <div className="text-center md:text-right">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Enterprise Application</p>
+              <p className="text-xs font-black text-charcoal uppercase mt-1">Billing Software for Garment Industries</p>
+            </div>
+          </div>
+        </footer>
       </main>
     </div>
   );
