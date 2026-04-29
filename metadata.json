@@ -1,0 +1,6 @@
+{
+  "name": "StitchFlow Wholesale",
+  "description": "Enterprise-grade garment wholesale and inventory management software with GST billing, size-color matrix tracking, and real-time analytics.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}

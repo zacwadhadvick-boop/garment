@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #1E3A8A;
+  --color-success: #10B981;
+  --color-accent: #FF6B35;
+  --color-charcoal: #2E2E2E;
+  --color-slate-bg: #F3F4F6;
+  
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Poppins", sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-bg text-slate-900 antialiased font-sans;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white rounded-xl border border-gray-100 shadow-sm transition-all duration-200;
+  }
+  
+  .btn-primary {
+    @apply px-6 py-3 bg-accent text-white rounded font-bold uppercase text-[10px] tracking-widest shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 hover:-translate-y-0.5 transition-all flex items-center justify-center gap-2;
+  }
+  
+  .btn-secondary {
+    @apply px-6 py-3 bg-white text-charcoal border border-gray-200 rounded font-bold uppercase text-[10px] tracking-widest hover:bg-gray-50 transition-all flex items-center justify-center gap-2;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-3 px-4 py-3 text-blue-100/60 rounded-md hover:bg-white/5 uppercase text-[10px] font-bold tracking-widest transition-all;
+  }
+
+  .nav-link-active {
+    @apply bg-white/10 text-white shadow-inner;
+  }
+
+  .label-xs {
+    @apply text-[10px] uppercase tracking-widest font-bold text-gray-400;
+  }
+}
