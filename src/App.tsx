@@ -12,6 +12,11 @@ import Billing from './pages/Billing';
 import Invoices from './pages/Invoices';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import Packaging from './pages/Packaging';
+import Purchase from './pages/Purchase';
+import Accounting from './pages/Accounting';
+import Marketing from './pages/Marketing';
+import Warehouse from './pages/Warehouse';
 import Login from './pages/Login';
 import { storage, seedInitialData } from './db';
 import { useEffect, useState } from 'react';
@@ -55,6 +60,11 @@ export default function App() {
           <Route path="/inventory" element={isAdmin ? <Inventory /> : <Navigate to="/billing" />} />
           <Route path="/customers" element={isAdmin ? <Customers /> : <Navigate to="/billing" />} />
           <Route path="/billing" element={<Billing />} />
+          <Route path="/packaging" element={<Packaging />} />
+          <Route path="/purchase" element={<Purchase />} />
+          <Route path="/marketing" element={isAdmin ? <Marketing /> : <Navigate to="/billing" />} />
+          <Route path="/warehouse" element={isAdmin ? <Warehouse /> : <Navigate to="/billing" />} />
+          <Route path="/accounting" element={isAdmin ? <Accounting /> : <Navigate to="/billing" />} />
           <Route path="/invoices" element={isAdmin ? <Invoices /> : <Navigate to="/billing" />} />
           <Route path="/reports" element={isAdmin ? <Reports /> : <Navigate to="/billing" />} />
           <Route path="/settings" element={isAdmin ? <Settings /> : <Navigate to="/billing" />} />

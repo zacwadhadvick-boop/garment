@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { storage } from '../db';
 import { Invoice } from '../types';
-import { Search, Printer, Eye, Download, CheckCircle, Clock, FileDown, RotateCcw, AlertTriangle, MessageSquare } from 'lucide-react';
+import { Search, Printer, Eye, Download, CheckCircle, Clock, FileDown, RotateCcw, AlertTriangle, MessageSquare, FileText } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { exportToExcel, generateInvoicePDF, printInvoice, shareInvoiceWhatsApp } from '../lib/exports';
 
@@ -108,13 +108,41 @@ const Invoices: React.FC = () => {
   };
 
   const handlePrint = (inv: Invoice) => {
-    const customer = customers.find(c => c.id === inv.customerId);
+    let customer = customers.find(c => c.id === inv.customerId);
+    
+    // Fallback for walk-in drafts
+    if (!customer && inv.customerId === 'walk-in') {
+      customer = {
+        id: 'walk-in',
+        name: 'Walk-in',
+        businessName: 'QUICK DRAFT / WALK-IN',
+        gstin: 'N/A',
+        phone: '',
+        email: '',
+        address: '---'
+      };
+    }
+    
     const salesPerson = salesPersons.find(s => s.id === inv.salesPersonId);
     if (customer) printInvoice(inv, customer, settings, salesPerson);
   };
 
   const handleDownloadPDF = (inv: Invoice) => {
-    const customer = customers.find(c => c.id === inv.customerId);
+    let customer = customers.find(c => c.id === inv.customerId);
+    
+    // Fallback for walk-in drafts
+    if (!customer && inv.customerId === 'walk-in') {
+      customer = {
+        id: 'walk-in',
+        name: 'Walk-in',
+        businessName: 'QUICK DRAFT / WALK-IN',
+        gstin: 'N/A',
+        phone: '',
+        email: '',
+        address: '---'
+      };
+    }
+    
     const salesPerson = salesPersons.find(s => s.id === inv.salesPersonId);
     if (customer) generateInvoicePDF(inv, customer, settings, salesPerson);
   };
@@ -246,10 +274,12 @@ const Invoices: React.FC = () => {
                           "px-2 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 border",
                           inv.status === 'Paid' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : 
                           inv.status === 'Returned' ? "bg-red-50 text-red-600 border-red-100" :
+                          inv.status === 'Draft' ? "bg-slate-50 text-slate-400 border-slate-200" :
                           "bg-orange-50 text-orange-600 border-orange-100"
                         )}>
                           {inv.status === 'Paid' ? <CheckCircle size={10} /> : 
                            inv.status === 'Returned' ? <RotateCcw size={10} /> : 
+                           inv.status === 'Draft' ? <FileText size={10} /> :
                            <Clock size={10} />}
                           {inv.status}
                         </span>

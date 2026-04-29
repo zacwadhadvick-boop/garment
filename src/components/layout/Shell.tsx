@@ -11,7 +11,12 @@ import {
   Shirt,
   BarChart3,
   Menu,
-  X
+  X,
+  Box,
+  Truck,
+  Wallet,
+  Megaphone,
+  Warehouse as WarehouseIcon
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -36,6 +41,11 @@ const Shell: React.FC<ShellProps> = ({ children, user, onLogout }) => {
     { name: 'Customers', icon: Users, path: '/customers', hidden: !isAdmin },
     { name: 'New Invoice', icon: PlusCircle, path: '/billing' },
     { name: 'Invoices', icon: History, path: '/invoices', hidden: !isAdmin },
+    { name: 'Marketing', icon: Megaphone, path: '/marketing', hidden: !isAdmin },
+    { name: 'Warehouse', icon: WarehouseIcon, path: '/warehouse', hidden: !isAdmin },
+    { name: 'Purchase', icon: Truck, path: '/purchase' },
+    { name: 'Accounting', icon: Wallet, path: '/accounting', hidden: !isAdmin },
+    { name: 'Packaging', icon: Box, path: '/packaging' },
     { name: 'Reports', icon: BarChart3, path: '/reports', hidden: !isAdmin },
     { name: 'Settings', icon: Settings, path: '/settings', hidden: !isAdmin },
   ].filter(item => !item.hidden);

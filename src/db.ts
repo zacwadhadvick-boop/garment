@@ -1,4 +1,4 @@
-import { Product, Customer, Invoice, BusinessSettings, Staff, ReturnRecord, SalesPerson, Vendor } from './types';
+import { Product, Customer, Invoice, BusinessSettings, Staff, ReturnRecord, SalesPerson, Vendor, Carton, PurchaseVoucher, Transaction, ExpenseRecord, Warehouse, WarehouseTransfer, Campaign } from './types';
 
 const KEYS = {
   PRODUCTS: 'stitchflow_products',
@@ -8,7 +8,14 @@ const KEYS = {
   RETURNS: 'stitchflow_returns',
   SALES_PERSONS: 'stitchflow_sales_persons',
   STAFF: 'stitchflow_staff',
-  SESSION: 'stitchflow_session'
+  SESSION: 'stitchflow_session',
+  CARTONS: 'stitchflow_cartons',
+  PURCHASES: 'stitchflow_purchases',
+  TRANSACTIONS: 'stitchflow_transactions',
+  EXPENSES: 'stitchflow_expenses',
+  WAREHOUSES: 'stitchflow_warehouses',
+  TRANSFERS: 'stitchflow_transfers',
+  CAMPAIGNS: 'stitchflow_campaigns'
 };
 
 const DEFAULT_SETTINGS: BusinessSettings = {
@@ -51,6 +58,15 @@ const DEFAULT_SETTINGS: BusinessSettings = {
       subCategories: [
         { id: '2-1', name: 'Slim Fit' },
         { id: '2-2', name: 'Loose Fit' }
+      ] 
+    },
+    { 
+      id: '3', 
+      name: 'Ladies Suits', 
+      subCategories: [
+        { id: '3-1', name: 'Anarkali' },
+        { id: '3-2', name: 'Straight Cut' },
+        { id: '3-3', name: 'Sharara' }
       ] 
     }
   ]
@@ -120,6 +136,55 @@ export const storage = {
   },
   saveStaff: (staff: Staff[]) => {
     localStorage.setItem(KEYS.STAFF, JSON.stringify(staff));
+  },
+  getCartons: (): Carton[] => {
+    const data = localStorage.getItem(KEYS.CARTONS);
+    return data ? JSON.parse(data) : [];
+  },
+  saveCartons: (cartons: Carton[]) => {
+    localStorage.setItem(KEYS.CARTONS, JSON.stringify(cartons));
+  },
+  getPurchases: (): PurchaseVoucher[] => {
+    const data = localStorage.getItem(KEYS.PURCHASES);
+    return data ? JSON.parse(data) : [];
+  },
+  savePurchases: (purchases: PurchaseVoucher[]) => {
+    localStorage.setItem(KEYS.PURCHASES, JSON.stringify(purchases));
+  },
+  getTransactions: (): Transaction[] => {
+    const data = localStorage.getItem(KEYS.TRANSACTIONS);
+    return data ? JSON.parse(data) : [];
+  },
+  saveTransactions: (transactions: Transaction[]) => {
+    localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(transactions));
+  },
+  getExpenses: (): ExpenseRecord[] => {
+    const data = localStorage.getItem(KEYS.EXPENSES);
+    return data ? JSON.parse(data) : [];
+  },
+  saveExpenses: (expenses: ExpenseRecord[]) => {
+    localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
+  },
+  getWarehouses: (): Warehouse[] => {
+    const data = localStorage.getItem(KEYS.WAREHOUSES);
+    return data ? JSON.parse(data) : [];
+  },
+  saveWarehouses: (warehouses: Warehouse[]) => {
+    localStorage.setItem(KEYS.WAREHOUSES, JSON.stringify(warehouses));
+  },
+  getTransfers: (): WarehouseTransfer[] => {
+    const data = localStorage.getItem(KEYS.TRANSFERS);
+    return data ? JSON.parse(data) : [];
+  },
+  saveTransfers: (transfers: WarehouseTransfer[]) => {
+    localStorage.setItem(KEYS.TRANSFERS, JSON.stringify(transfers));
+  },
+  getCampaigns: (): Campaign[] => {
+    const data = localStorage.getItem(KEYS.CAMPAIGNS);
+    return data ? JSON.parse(data) : [];
+  },
+  saveCampaigns: (campaigns: Campaign[]) => {
+    localStorage.setItem(KEYS.CAMPAIGNS, JSON.stringify(campaigns));
   },
   getSession: (): Staff | null => {
     const data = localStorage.getItem(KEYS.SESSION);
@@ -215,5 +280,47 @@ export const seedInitialData = () => {
       staff[adminIdx].password = '987654';
       storage.saveStaff(staff);
     }
+  }
+
+  if (storage.getTransactions().length === 0) {
+    const initialTransactions: Transaction[] = [
+      {
+        id: 't1',
+        type: 'Payment_In',
+        category: 'Sales',
+        amount: 5000,
+        entityId: 'c1',
+        entityName: 'Sharma Garments',
+        paymentMethod: 'Cash',
+        description: 'Partial payment for INV-001',
+        date: Date.now() - 86400000 * 2,
+        createdAt: Date.now()
+      }
+    ];
+    storage.saveTransactions(initialTransactions);
+  }
+
+  if (storage.getExpenses().length === 0) {
+    const initialExpenses: ExpenseRecord[] = [
+      {
+        id: 'e1',
+        category: 'Transport',
+        amount: 450,
+        paymentMethod: 'Cash',
+        description: 'Local delivery to Railway station',
+        date: Date.now() - 86400000,
+        createdAt: Date.now()
+      }
+    ];
+    storage.saveExpenses(initialExpenses);
+  }
+
+  if (storage.getWarehouses().length === 0) {
+    const initialWarehouses: Warehouse[] = [
+      { id: 'wh1', name: 'Main Depot', location: 'Okhla, Delhi', isMain: true },
+      { id: 'wh2', name: 'North Branch', location: 'Rohini, Delhi' },
+      { id: 'wh3', name: 'South Hub', location: 'Gurgaon' }
+    ];
+    storage.saveWarehouses(initialWarehouses);
   }
 };

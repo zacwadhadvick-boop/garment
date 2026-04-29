@@ -11,6 +11,7 @@ const Inventory: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [settings] = useState<BusinessSettings>(storage.getSettings());
   const [vendors] = useState<Vendor[]>(storage.getVendors());
+  const [warehouses] = useState(storage.getWarehouses());
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedForBulk, setSelectedForBulk] = useState<Set<string>>(new Set());
@@ -80,6 +81,8 @@ const Inventory: React.FC = () => {
       name: '', sku: '', brand: '', category: '', subCategory: '', vendorId: '',
       purchasePrice: 0, wholesalePrice: 0, mrp: 0, gstRate: 5,
       lowStockThreshold: undefined,
+      warehouseId: warehouses[0]?.id || '',
+      rackLocation: '',
       imageUrl: undefined
     });
   };
@@ -479,6 +482,31 @@ const Inventory: React.FC = () => {
                   value={newProduct.lowStockThreshold === undefined ? '' : newProduct.lowStockThreshold}
                   onChange={e => setNewProduct({...newProduct, lowStockThreshold: e.target.value ? Number(e.target.value) : undefined})}
                 />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 block">Storage Hub</label>
+                  <select 
+                    className="w-full p-3 bg-slate-50 border border-slate-100 rounded-lg outline-none focus:border-primary/30 text-xs font-bold"
+                    value={newProduct.warehouseId}
+                    onChange={e => setNewProduct({...newProduct, warehouseId: e.target.value})}
+                  >
+                    <option value="">Select Warehouse</option>
+                    {warehouses.map(w => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1 block">Rack / Bin</label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g. A-12-B"
+                    className="w-full p-3 bg-slate-50 border border-slate-100 rounded-lg outline-none focus:border-primary/30 font-bold"
+                    value={newProduct.rackLocation}
+                    onChange={e => setNewProduct({...newProduct, rackLocation: e.target.value})}
+                  />
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4 mt-8">

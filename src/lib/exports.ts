@@ -128,52 +128,62 @@ export const generateInvoicePDF = (invoice: Invoice, customer: Customer, setting
 };
 
 export const printInvoice = (invoice: Invoice, customer: Customer, settings: BusinessSettings, salesPerson?: any) => {
-  // Simple print view in new window or hidden iframe
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) return;
+  // Create a hidden iframe for printing to avoid popup blockers
+  const iframe = document.createElement('iframe');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  document.body.appendChild(iframe);
 
   const html = `
     <html>
       <head>
         <title>Print Invoice ${invoice.invoiceNumber}</title>
         <style>
-          body { font-family: sans-serif; padding: 40px; }
-          .header { text-align: center; margin-bottom: 40px; }
-          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 40px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
-          th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-          .total-section { margin-left: auto; width: 300px; }
-          .total-row { display: flex; justify-content: space-between; padding: 8px 0; }
-          .grand-total { font-weight: bold; border-top: 2px solid #000; margin-top: 8px; }
-          .logo { max-width: 150px; height: auto; }
+          body { font-family: sans-serif; padding: 20px; }
+          .header { text-align: center; margin-bottom: 20px; }
+          .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+          .total-section { margin-left: auto; width: 250px; }
+          .total-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 12px; }
+          .grand-total { font-weight: bold; border-top: 1px solid #000; margin-top: 4px; font-size: 14px; }
+          .logo { max-width: 100px; height: auto; }
+          @media print {
+            body { padding: 0; }
+            @page { margin: 1cm; }
+          }
         </style>
       </head>
       <body>
         <div class="header" style="display: flex; justify-content: space-between; align-items: flex-start; text-align: left;">
           <div>
-            ${settings.logoUrl ? `<img src="${settings.logoUrl}" class="logo">` : `<h1 style="margin:0">${settings.name}</h1>`}
+            ${settings.logoUrl ? `<img src="${settings.logoUrl}" class="logo">` : `<h1 style="margin:0; font-size: 18px;">${settings.name}</h1>`}
           </div>
           <div style="text-align: right">
-            <h2 style="margin:0; color:#2563eb">TAX INVOICE</h2>
-            <p style="font-size: 14px; margin-top: 4px;">#${invoice.invoiceNumber}</p>
+            <h2 style="margin:0; color:#2563eb; font-size: 16px;">${invoice.status === 'Draft' ? 'ESTIMATE / DRAFT' : 'TAX INVOICE'}</h2>
+            <p style="font-size: 12px; margin-top: 4px;">#${invoice.invoiceNumber}</p>
           </div>
         </div>
         <div class="grid">
-          <div>
+          <div style="font-size: 11px;">
             <strong>Billing From:</strong><br>
             ${settings.name}<br>
             ${settings.address.replace(/\n/g, '<br>')}<br>
             GSTIN: ${settings.gstin}<br>
             Ph: ${settings.phone}${settings.email ? `<br>Email: ${settings.email}` : ''}
           </div>
-          <div style="text-align: right">
+          <div style="text-align: right; font-size: 11px;">
             <strong>Date</strong>: ${new Date(invoice.createdAt).toLocaleDateString()}<br>
             <strong>Time</strong>: ${new Date(invoice.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}<br>
             <strong>Due Date</strong>: ${new Date(invoice.createdAt + 15*24*60*60*1000).toLocaleDateString()}<br>
             ${salesPerson ? `<strong>Sales Personnel</strong>: ${salesPerson.name} (${salesPerson.code})<br>` : ''}
           </div>
         </div>
-        <div>
+        <div style="font-size: 11px;">
           <strong>Bill To:</strong><br>
           ${customer.businessName}<br>
           ${customer.address}<br>
@@ -196,30 +206,52 @@ export const printInvoice = (invoice: Invoice, customer: Customer, settings: Bus
                 <td>${item.productName}</td>
                 <td>${item.size} / ${item.color}</td>
                 <td>${item.quantity}</td>
-                <td>${item.price}</td>
-                <td>${item.total}</td>
+                <td>${item.price.toFixed(2)}</td>
+                <td>${item.total.toFixed(2)}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
         <div class="total-section">
           <div class="total-row"><span>Subtotal</span> <span>₹${invoice.subtotal.toFixed(2)}</span></div>
-          ${settings.taxTypes.filter(t => t.isDefault).map(t => {
-            // This is a simple proportional breakdown for demonstration
-            // In a real app, you'd calculate this per item based on actual tax configuration
-            const proportionalTax = (invoice.taxTotal * (t.rate / settings.taxTypes.filter(dt => dt.isDefault).reduce((sum, dt) => sum + dt.rate, 0)));
-            if (isNaN(proportionalTax)) return '';
-            return `<div class="total-row text-slate-400" style="font-size: 11px"><span>${t.name} (${t.rate}%)</span> <span>₹${proportionalTax.toFixed(2)}</span></div>`;
-          }).join('')}
-          <div class="total-row"><span>GST Amount (Total)</span> <span>₹${invoice.taxTotal.toFixed(2)}</span></div>
+          <div class="total-row"><span>Tax Total</span> <span>₹${invoice.taxTotal.toFixed(2)}</span></div>
           <div class="total-row grand-total"><span>Grand Total</span> <span>₹${invoice.grandTotal.toFixed(2)}</span></div>
+        </div>
+        <div style="margin-top: 40px; font-size: 10px; color: #666; text-align: center; border-top: 1px solid #eee; padding-top: 10px;">
+          This is a computer generated document.
+          ${invoice.status === 'Draft' ? '<br><strong style="color:red">THIS IS A DRAFT / ESTIMATE - NOT FOR TAX PURPOSES</strong>' : ''}
         </div>
       </body>
     </html>
   `;
 
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-  printWindow.print();
+  const doc = iframe.contentWindow?.document || iframe.contentDocument;
+  if (doc) {
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    // Wait for content to load then print
+    iframe.onload = () => {
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        // Remove iframe after some time to allow print dialog to finish
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+        }, 1000);
+      }, 500);
+    };
+    
+    // Fallback if onload doesn't trigger
+    setTimeout(() => {
+      if (document.body.contains(iframe)) {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          if (document.body.contains(iframe)) document.body.removeChild(iframe);
+        }, 1000);
+      }
+    }, 2000);
+  }
 };

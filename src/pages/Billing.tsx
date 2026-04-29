@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { storage } from '../db';
-import { Customer, Product, Invoice, OrderItem, SalesPerson } from '../types';
+import { Customer, Product, Invoice, OrderItem, SalesPerson, Transaction } from '../types';
 import { Search, Plus, Trash2, Save, Printer, User, QrCode, MessageSquare, CheckCircle, FileText, X } from 'lucide-react';
 import { formatCurrency, cn } from '../lib/utils';
 import { printInvoice, shareInvoiceWhatsApp } from '../lib/exports';
@@ -21,6 +21,46 @@ const Billing: React.FC = () => {
   const [settings, setSettings] = useState(storage.getSettings());
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Card' | 'UPI' | 'Credit'>('Cash');
   const [successInvoice, setSuccessInvoice] = useState<Invoice | null>(null);
+  const [pricingTier, setPricingTier] = useState<'mrp' | 'wholesale' | 'seasonal' | 'special'>('wholesale');
+  const [activeScheme, setActiveScheme] = useState<'none' | 'buy10get1' | 'flat5'>('none');
+  const [matrixProduct, setMatrixProduct] = useState<Product | null>(null);
+  const [matrixEntries, setMatrixEntries] = useState<Record<string, Record<string, number>>>({});
+  const [invoiceDiscount, setInvoiceDiscount] = useState(0);
+
+  const stopScanner = () => {
+    if (scanner) {
+      scanner.stop();
+      setIsScanning(false);
+    }
+  };
+
+  const startScanner = (inputId: string) => {
+    setIsScanning(true);
+    const html5QrCode = new Html5Qrcode("reader");
+    setScanner(html5QrCode);
+    
+    html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      (decodedText) => {
+        // Find product with SKU
+        const product = products.find(p => p.sku === decodedText);
+        if (product) {
+          openMatrix(product);
+          stopScanner();
+        }
+      },
+      () => {}
+    );
+  };
+
+  const isInterState = useMemo(() => {
+    if (!selectedCustomer || !settings.address) return false;
+    // Simple logic: if state exists in address and doesn't match
+    const bizState = settings.address.split(',').pop()?.trim().toLowerCase();
+    const custState = selectedCustomer.address.split(',').pop()?.trim().toLowerCase();
+    return bizState !== custState && !!bizState && !!custState;
+  }, [selectedCustomer, settings]);
 
   useEffect(() => {
     setCustomers(storage.getCustomers());
@@ -30,73 +70,78 @@ const Billing: React.FC = () => {
     setInvoiceNumber(`INV-${Date.now().toString().slice(-6)}`);
   }, []);
 
-  const handleScan = (decodedText: string) => {
-    try {
-      const data = JSON.parse(decodedText);
-      if (data.type === 'product' && data.sku) {
-        setProductSearch(data.sku);
-        setIsScanning(false);
-        if (scanner) {
-          scanner.stop().catch(console.error);
-        }
-      }
-    } catch (e) {
-      // Not a JSON QR, try as plain text SKU
-      setProductSearch(decodedText);
-      setIsScanning(false);
-      if (scanner) {
-        scanner.stop().catch(console.error);
-      }
-    }
+  const openMatrix = (product: Product) => {
+    setMatrixProduct(product);
+    const initial: Record<string, Record<string, number>> = {};
+    Object.keys(product.inventory).forEach(size => {
+      initial[size] = {};
+      Object.keys(product.inventory[size]).forEach(color => {
+        initial[size][color] = 0;
+      });
+    });
+    setMatrixEntries(initial);
   };
 
-  const startScanner = async () => {
-    setIsScanning(true);
-    setTimeout(async () => {
-      const html5QrCode = new Html5Qrcode("reader");
-      setScanner(html5QrCode);
-      try {
-        await html5QrCode.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          handleScan,
-          () => {}
-        );
-      } catch (err) {
-        console.error("Camera access error:", err);
-        setIsScanning(false);
-      }
-    }, 100);
+  const handleMatrixChange = (size: string, color: string, qty: number) => {
+    setMatrixEntries(prev => ({
+      ...prev,
+      [size]: { ...prev[size], [color]: qty }
+    }));
   };
 
-  const stopScanner = async () => {
-    if (scanner) {
-      await scanner.stop();
-      setScanner(null);
-    }
-    setIsScanning(false);
-  };
-
-  const addToCart = (product: Product, size: string, color: string, qty: number) => {
-    const wholesalePrice = product.wholesalePrice;
-    const gstRate = product.gstRate;
+  const addMatrixToCart = () => {
+    if (!matrixProduct) return;
     
-    let price = wholesalePrice;
+    const newItems: OrderItem[] = [];
+    Object.entries(matrixEntries).forEach(([size, colors]) => {
+      Object.entries(colors).forEach(([color, qty]) => {
+        if (qty > 0) {
+          const item = createCartItem(matrixProduct, size, color, qty);
+          newItems.push(item);
+        }
+      });
+    });
+
+    setCart([...cart, ...newItems]);
+    setMatrixProduct(null);
+  };
+
+  const createCartItem = (product: Product, size: string, color: string, qty: number): OrderItem => {
+    let basePrice = product.wholesalePrice;
+    
+    if (pricingTier === 'mrp') basePrice = product.mrp;
+    else if (pricingTier === 'seasonal') basePrice = product.wholesalePrice * 0.95; // 5% Seasonal Discount
+    else if (pricingTier === 'special') basePrice = product.wholesalePrice * 0.9; // 10% special
+    
+    const gstRate = product.gstRate || 12;
+    let price = basePrice;
+
+    // Apply Schemes
+    if (activeScheme === 'buy10get1' && qty >= 11) {
+      const billableQty = qty - Math.floor(qty / 11);
+      price = (basePrice * billableQty) / qty;
+    } else if (activeScheme === 'flat5') {
+      price = basePrice * 0.95;
+    }
+
     let gstAmount = 0;
     let total = 0;
 
     if (settings.taxPreference === 'inclusive') {
-      total = wholesalePrice * qty;
+      total = price * qty;
       gstAmount = total - (total / (1 + gstRate / 100));
       price = (total - gstAmount) / qty;
     } else {
-      price = wholesalePrice;
       const subtotal = price * qty;
       gstAmount = subtotal * (gstRate / 100);
       total = subtotal + gstAmount;
     }
 
-    const newItem: OrderItem = {
+    const cgst = isInterState ? 0 : gstAmount / 2;
+    const sgst = isInterState ? 0 : gstAmount / 2;
+    const igst = isInterState ? gstAmount : 0;
+
+    return {
       productId: product.id,
       productName: product.name,
       sku: product.sku,
@@ -105,10 +150,11 @@ const Billing: React.FC = () => {
       quantity: qty,
       price,
       gstAmount,
+      cgst,
+      sgst,
+      igst,
       total
     };
-
-    setCart([...cart, newItem]);
   };
 
   const removeFromCart = (index: number) => {
@@ -117,32 +163,68 @@ const Billing: React.FC = () => {
 
   const calculateTotals = () => {
     const subtotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
-    const taxTotal = cart.reduce((acc, item) => acc + item.gstAmount, 0);
-    return { subtotal, taxTotal, grandTotal: subtotal + taxTotal };
+    const cgstTotal = cart.reduce((acc, item) => acc + (item.cgst || 0), 0);
+    const sgstTotal = cart.reduce((acc, item) => acc + (item.sgst || 0), 0);
+    const igstTotal = cart.reduce((acc, item) => acc + (item.igst || 0), 0);
+    const taxTotal = cgstTotal + sgstTotal + igstTotal;
+    const grandTotal = subtotal + taxTotal - invoiceDiscount;
+    
+    return { subtotal, cgstTotal, sgstTotal, igstTotal, taxTotal, grandTotal };
   };
 
   const handlePrintDraft = () => {
-    if (!selectedCustomer || cart.length === 0) return;
-    const { subtotal, taxTotal, grandTotal } = calculateTotals();
-    const mockInvoice: Invoice = {
-      id: 'draft',
+    if (cart.length === 0) return;
+    
+    const { subtotal, cgstTotal, sgstTotal, igstTotal, taxTotal, grandTotal } = calculateTotals();
+    const draftInvoice: Invoice = {
+      id: Date.now().toString(),
       invoiceNumber: `DRAFT-${invoiceNumber}`,
-      customerId: selectedCustomer.id,
-      customerName: selectedCustomer.businessName,
+      customerId: selectedCustomer?.id || 'walk-in',
+      customerName: selectedCustomer?.businessName || 'QUICK DRAFT / WALK-IN',
       items: cart,
       subtotal,
       taxTotal,
+      cgstTotal,
+      sgstTotal,
+      igstTotal,
+      discountTotal: invoiceDiscount,
       grandTotal,
-      status: 'Unpaid',
-      createdAt: Date.now()
+      status: 'Draft',
+      salesPersonId: selectedSalesPerson?.id,
+      createdAt: Date.now(),
+      isInterState
     };
-    printInvoice(mockInvoice, selectedCustomer, settings, selectedSalesPerson);
+
+    // Save to storage as a draft
+    const invoices = storage.getInvoices();
+    storage.saveInvoices([...invoices, draftInvoice]);
+
+    const dummyCustomer: Customer = selectedCustomer || {
+      id: 'walk-in',
+      name: 'Walk-in',
+      businessName: 'QUICK DRAFT / WALK-IN',
+      gstin: 'N/A',
+      phone: '',
+      email: '',
+      address: '---',
+      creditLimit: 0,
+      outstandingBalance: 0,
+      tier: 'Retail'
+    };
+
+    printInvoice(draftInvoice, dummyCustomer, settings, selectedSalesPerson);
+    
+    setSuccessInvoice(draftInvoice);
+    setCart([]);
+    setSelectedCustomer(null);
+    setInvoiceNumber(`INV-${(Date.now() + 1).toString().slice(-6)}`);
+    setInvoiceDiscount(0);
   };
 
   const saveInvoice = () => {
     if (!selectedCustomer || cart.length === 0) return;
     
-    const { subtotal, taxTotal, grandTotal } = calculateTotals();
+    const { subtotal, cgstTotal, sgstTotal, igstTotal, taxTotal, grandTotal } = calculateTotals();
     const newInvoice: Invoice = {
       id: Date.now().toString(),
       invoiceNumber,
@@ -151,15 +233,50 @@ const Billing: React.FC = () => {
       items: cart,
       subtotal,
       taxTotal,
+      cgstTotal,
+      sgstTotal,
+      igstTotal,
+      discountTotal: invoiceDiscount,
       grandTotal,
       status: paymentMethod === 'Credit' ? 'Unpaid' : 'Paid',
       paymentMethod,
       salesPersonId: selectedSalesPerson?.id,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      isInterState
     };
 
     const invoices = storage.getInvoices();
     storage.saveInvoices([...invoices, newInvoice]);
+
+    // Update Customer Balance if credit
+    if (paymentMethod === 'Credit') {
+      const customers = storage.getCustomers();
+      const updatedCustomers = customers.map(c => 
+        c.id === selectedCustomer.id 
+          ? { ...c, outstandingBalance: c.outstandingBalance + grandTotal }
+          : c
+      );
+      storage.saveCustomers(updatedCustomers);
+    }
+
+    // Record Transaction
+    const transactions = storage.getTransactions();
+    const newTransaction: Transaction = {
+      id: `TR-${Date.now()}`,
+      type: paymentMethod === 'Credit' ? 'Income' : 'Payment_In', // Income for credit (as revenue), Payment_In for others
+      category: 'Sales',
+      amount: grandTotal,
+      entityId: selectedCustomer.id,
+      entityName: selectedCustomer.businessName,
+      referenceType: 'Invoice',
+      referenceId: newInvoice.id,
+      referenceNumber: newInvoice.invoiceNumber,
+      paymentMethod: paymentMethod === 'Credit' ? 'Card' : paymentMethod, // Placeholder for credit
+      description: `Sales Invoice ${newInvoice.invoiceNumber}`,
+      date: Date.now(),
+      createdAt: Date.now()
+    };
+    storage.saveTransactions([...transactions, newTransaction]);
     
     // Automatically print on save
     printInvoice(newInvoice, selectedCustomer, settings, selectedSalesPerson);
@@ -167,10 +284,11 @@ const Billing: React.FC = () => {
     // Show success modal
     setSuccessInvoice(newInvoice);
     
-    // Reset fields but keep success modal
+    // Reset fields
     setCart([]);
     setSelectedCustomer(null);
     setInvoiceNumber(`INV-${Date.now().toString().slice(-6)}`);
+    setInvoiceDiscount(0);
   };
 
   const totals = calculateTotals();
@@ -246,10 +364,29 @@ const Billing: React.FC = () => {
                    <span>Subtotal</span>
                    <span>{formatCurrency(successInvoice.subtotal)}</span>
                 </div>
-                <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                   <span>Tax (GST)</span>
-                   <span>{formatCurrency(successInvoice.taxTotal)}</span>
-                </div>
+                {successInvoice.igstTotal > 0 ? (
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                    <span>IGST</span>
+                    <span>{formatCurrency(successInvoice.igstTotal)}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      <span>CGST</span>
+                      <span>{formatCurrency(successInvoice.cgstTotal || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                      <span>SGST</span>
+                      <span>{formatCurrency(successInvoice.sgstTotal || 0)}</span>
+                    </div>
+                  </>
+                )}
+                {successInvoice.discountTotal > 0 && (
+                  <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-red-500">
+                    <span>Discount</span>
+                    <span>-{formatCurrency(successInvoice.discountTotal)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-lg font-black text-primary pt-2">
                    <span className="uppercase tracking-tighter">Grand Total</span>
                    <span>{formatCurrency(successInvoice.grandTotal)}</span>
@@ -307,13 +444,98 @@ const Billing: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Matrix Allocation Modal */}
+      {matrixProduct && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <div>
+                <h3 className="text-xl font-black text-charcoal uppercase tracking-tighter">Bulk Matrix Entry</h3>
+                <p className="text-[10px] text-primary font-bold uppercase tracking-widest mt-1">{matrixProduct.name} — {matrixProduct.sku}</p>
+              </div>
+              <button 
+                onClick={() => setMatrixProduct(null)}
+                className="p-3 text-slate-400 hover:text-charcoal transition-colors hover:bg-slate-100 rounded-2xl"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-x-auto p-8">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    <th className="p-4 text-left text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100">Color \ Size</th>
+                    {Object.keys(matrixProduct.inventory).map(size => (
+                      <th key={size} className="p-4 text-center text-[10px] font-black uppercase tracking-widest text-slate-400 border-b border-slate-100">{size}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from(new Set(Object.values(matrixProduct.inventory).flatMap(colors => Object.keys(colors)))).map(color => (
+                    <tr key={color} className="group hover:bg-slate-50 transition-colors">
+                      <td className="p-4 text-xs font-black text-charcoal border-b border-slate-50 uppercase tracking-tight">{color}</td>
+                      {Object.keys(matrixProduct.inventory).map(size => {
+                        const hasStock = matrixProduct.inventory[size]?.[color] !== undefined;
+                        return (
+                          <td key={size} className="p-2 border-b border-slate-50 text-center">
+                            {hasStock ? (
+                              <div className="space-y-1">
+                                <input 
+                                  type="number" 
+                                  min="0"
+                                  className="w-16 p-2 bg-white border border-slate-200 rounded-lg text-center text-xs font-black outline-none focus:ring-2 focus:ring-primary/20"
+                                  placeholder="0"
+                                  value={matrixEntries[size]?.[color] || ''}
+                                  onChange={(e) => handleMatrixChange(size, color, parseInt(e.target.value) || 0)}
+                                />
+                                <p className="text-[8px] font-bold text-slate-300">Avl: {matrixProduct.inventory[size][color]}</p>
+                              </div>
+                            ) : (
+                              <div className="w-16 h-8 bg-slate-100/50 rounded-lg mx-auto" />
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-8 border-t border-slate-100 flex justify-end gap-4 bg-slate-50/50">
+              <button 
+                onClick={() => setMatrixProduct(null)}
+                className="btn-secondary py-3 px-6"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={addMatrixToCart}
+                className="btn-primary py-3 px-8 shadow-xl shadow-primary/20"
+              >
+                Append to Batch
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Selection Area */}
       <div className="flex-1 w-full space-y-6">
         {/* Customer Select */}
         <div className="glass-card p-6 lg:p-8">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-8 h-8 rounded bg-primary text-white flex items-center justify-center font-bold">C</div>
-            <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Merchant Selection</h3>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded bg-primary text-white flex items-center justify-center font-bold">C</div>
+              <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Merchant Selection</h3>
+            </div>
+            {isInterState && (
+              <span className="bg-orange-50 text-orange-600 px-3 py-1 rounded-full text-[9px] font-black uppercase border border-orange-100 flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                Inter-state IGST Applied
+              </span>
+            )}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-4">
@@ -324,13 +546,13 @@ const Billing: React.FC = () => {
                   <input 
                     type="text"
                     placeholder="Filter businesses..."
-                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-xl outline-none font-bold text-charcoal tracking-tight text-sm"
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-xl outline-none font-bold text-charcoal tracking-tight text-sm shadow-sm"
                     value={customerSearch}
                     onChange={(e) => setCustomerSearch(e.target.value)}
                   />
                 </div>
                 <select 
-                  className="w-full px-4 py-4 bg-slate-50 border border-slate-100 rounded-xl outline-none appearance-none font-bold text-charcoal tracking-tight text-sm"
+                  className="w-full px-4 py-4 bg-slate-50 border border-slate-100 rounded-xl outline-none appearance-none font-bold text-charcoal tracking-tight text-sm shadow-sm"
                   onChange={(e) => setSelectedCustomer(customers.find(c => c.id === e.target.value) || null)}
                   value={selectedCustomer?.id || ''}
                 >
@@ -347,7 +569,7 @@ const Billing: React.FC = () => {
               <div className="relative">
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
                 <select 
-                  className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-xl outline-none appearance-none font-bold text-charcoal tracking-tight text-sm h-[115px]"
+                  className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-xl outline-none appearance-none font-bold text-charcoal tracking-tight text-sm h-[115px] shadow-sm"
                   onChange={(e) => setSelectedSalesPerson(salesPersons.find(s => s.id === e.target.value) || null)}
                   value={selectedSalesPerson?.id || ''}
                 >
@@ -360,10 +582,14 @@ const Billing: React.FC = () => {
             </div>
           </div>
           {selectedCustomer && (
-            <div className="mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+            <div className="mt-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-4 bg-emerald-50/50 rounded-xl border border-emerald-100/50">
               <div>
-                <p className="text-[9px] text-emerald-600/60 uppercase font-black tracking-widest mb-1">GSTIN</p>
-                <p className="font-mono text-xs sm:text-sm font-bold text-emerald-800 tracking-wider truncate max-w-[150px] sm:max-w-none">{selectedCustomer.gstin}</p>
+                <p className="text-[9px] text-emerald-600/60 uppercase font-black tracking-widest mb-1">State & GSTIN</p>
+                <div className="flex items-center gap-3">
+                  <p className="font-mono text-sm font-bold text-emerald-800 tracking-wider">{selectedCustomer.gstin}</p>
+                  <span className="w-1 h-1 rounded-full bg-emerald-300" />
+                  <p className="text-[10px] font-black text-emerald-600 uppercase italic whitespace-nowrap">{selectedCustomer.address.split(',').pop()?.trim()}</p>
+                </div>
               </div>
               <div className="text-left sm:text-right">
                 <p className="text-[9px] text-emerald-600/60 uppercase font-black tracking-widest mb-1">Status</p>
@@ -378,62 +604,96 @@ const Billing: React.FC = () => {
 
         {/* Product Matrix / Grid */}
         <div className="glass-card p-6 lg:p-8">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
-            <div className="flex-1">
-              <h3 className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-4">Inventory Matrix Allocation</h3>
+          <div className="flex flex-col sm:flex-row items-start lg:items-center justify-between mb-8 gap-6 pb-6 border-b border-slate-100">
+            <div className="flex-1 w-full lg:w-auto">
+              <h3 className="text-[10px] uppercase tracking-widest font-black text-slate-400 mb-4">Inventory Matrix Allocation</h3>
               <div className="flex items-center gap-3">
                 <div className="relative flex-1 max-w-md">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
                   <input 
                     type="text" 
-                    placeholder="Filter items by name or SKU..."
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-100 rounded-lg outline-none text-xs font-bold text-charcoal"
+                    placeholder="Search Article or SKU..."
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-xl outline-none text-xs font-bold text-charcoal shadow-inner"
                     value={productSearch}
                     onChange={(e) => setProductSearch(e.target.value)}
                   />
                 </div>
                 <button 
                   onClick={startScanner}
-                  className="p-2.5 bg-primary/10 text-primary rounded-lg hover:bg-primary hover:text-white transition-all group"
-                  title="Scan Product QR"
+                  className="p-3 bg-primary/10 text-primary rounded-xl hover:bg-primary hover:text-white transition-all group shadow-sm"
+                  title="Scan Product"
                 >
-                  <QrCode size={18} />
+                  <QrCode size={20} />
                 </button>
               </div>
             </div>
-            <span className="text-[10px] text-primary font-bold uppercase tracking-widest mt-auto">Pricing: Wholesale</span>
-          </div>
-          <div className="space-y-8">
-            {filteredProducts.map(product => (
-              <div key={product.id} className="border-b border-slate-50 last:border-0 pb-8">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
-                  <div>
-                    <p className="font-bold text-charcoal uppercase tracking-tight text-base">{product.name}</p>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{product.sku} | <span className="text-primary/60">{product.brand}</span></p>
-                  </div>
-                  <div className="text-left sm:text-right">
-                    <p className="text-sm font-bold text-primary tracking-tight">{formatCurrency(product.wholesalePrice)}</p>
-                    <p className="text-[9px] text-gray-400 font-bold uppercase">Qty Available: {product.totalStock}u</p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(product.inventory).map(([size, colors]) => (
-                    Object.entries(colors).map(([color, stock]) => (
-                      <button
-                        key={`${size}-${color}`}
-                        onClick={() => addToCart(product, size, color, 1)}
-                        className="group flex items-center gap-3 px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg hover:border-accent hover:bg-accent/5 transition-all"
-                      >
-                        <div className="w-6 h-6 bg-white rounded border border-slate-100 flex items-center justify-center font-bold text-[10px] text-charcoal">
-                          {size}
-                        </div>
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-charcoal/70">{color}</span>
-                        <span className="text-[10px] font-black opacity-30 group-hover:opacity-100 group-hover:text-accent transition-all">
-                          {stock}
-                        </span>
-                      </button>
-                    ))
+            
+            <div className="flex flex-col gap-2 w-full lg:w-auto">
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">Pricing & Schemes</label>
+              <div className="flex flex-wrap lg:flex-nowrap gap-2">
+                <div className="flex p-1 bg-slate-100 rounded-xl gap-1">
+                  {(['wholesale', 'mrp', 'seasonal', 'special'] as const).map(tier => (
+                    <button
+                      key={tier}
+                      onClick={() => setPricingTier(tier)}
+                      className={cn(
+                        "px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-tighter transition-all",
+                        pricingTier === tier 
+                          ? "bg-white text-primary shadow-sm scale-[1.05]" 
+                          : "text-slate-400 hover:text-slate-600"
+                      )}
+                    >
+                      {tier}
+                    </button>
                   ))}
+                </div>
+                <div className="flex p-1 bg-slate-100 rounded-xl gap-1">
+                  {(['none', 'buy10get1', 'flat5'] as const).map(scheme => (
+                    <button
+                      key={scheme}
+                      onClick={() => setActiveScheme(scheme)}
+                      className={cn(
+                        "px-3 py-2 rounded-lg text-[10px] font-black uppercase tracking-tighter transition-all",
+                        activeScheme === scheme 
+                          ? "bg-primary text-white shadow-sm" 
+                          : "text-slate-400 hover:text-slate-600"
+                      )}
+                    >
+                      {scheme === 'none' ? 'No Scheme' : scheme === 'buy10get1' ? '10+1 Free' : 'Flat 5%'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {filteredProducts.map(product => (
+              <div key={product.id} className="p-4 bg-white border border-slate-100 rounded-2xl hover:border-primary/20 hover:shadow-lg hover:shadow-primary/5 transition-all group">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3">
+                      <p className="font-black text-charcoal uppercase tracking-tighter text-base group-hover:text-primary transition-colors">{product.name}</p>
+                      <span className="text-[10px] bg-slate-50 text-slate-400 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest">{product.category}</span>
+                    </div>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">SKU: {product.sku} | <span className="text-primary/60">{product.brand}</span></p>
+                  </div>
+                  
+                  <div className="flex items-center gap-8">
+                    <div className="text-right">
+                      <p className="text-lg font-black text-primary tracking-tighter">
+                        {formatCurrency(pricingTier === 'mrp' ? product.mrp : pricingTier === 'special' ? (product.wholesalePrice * 0.9) : product.wholesalePrice)}
+                      </p>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase">Stock: {product.totalStock} PCS</p>
+                    </div>
+                    <button 
+                      onClick={() => openMatrix(product)}
+                      className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:bg-primary hover:text-white transition-all shadow-sm"
+                      title="Bulk Allocation"
+                    >
+                      <Plus size={20} />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -478,33 +738,59 @@ const Billing: React.FC = () => {
             )}
           </div>
 
-          <div className="p-8 bg-slate-50 rounded-b-xl space-y-4 border-t border-slate-100">
+          <div className="p-6 bg-slate-50/80 space-y-4 border-t border-slate-100 backdrop-blur-sm">
             <div className="space-y-2">
-              <div className="flex justify-between text-[10px] uppercase tracking-widest font-bold text-gray-400">
+              <div className="flex justify-between text-[10px] uppercase tracking-widest font-black text-slate-400">
                 <span>Value</span>
                 <span>{formatCurrency(totals.subtotal)}</span>
               </div>
-              <div className="flex justify-between text-[10px] uppercase tracking-widest font-bold text-gray-400">
-                <span>Tax (GST)</span>
-                <span>{formatCurrency(totals.taxTotal)}</span>
+              
+              {isInterState ? (
+                <div className="flex justify-between text-[10px] uppercase tracking-widest font-black text-slate-400 italic">
+                  <span>IGST Total</span>
+                  <span>{formatCurrency(totals.igstTotal)}</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex justify-between text-[10px] uppercase tracking-widest font-black text-slate-400">
+                    <span>CGST</span>
+                    <span>{formatCurrency(totals.cgstTotal)}</span>
+                  </div>
+                  <div className="flex justify-between text-[10px] uppercase tracking-widest font-black text-slate-400">
+                    <span>SGST</span>
+                    <span>{formatCurrency(totals.sgstTotal)}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-4 py-2 border-y border-slate-100/50">
+                <label className="text-[9px] font-black uppercase tracking-widest text-orange-400">Disc</label>
+                <input 
+                  type="number" 
+                  className="flex-1 bg-transparent text-right text-xs font-black outline-none text-orange-600"
+                  placeholder="0.00"
+                  value={invoiceDiscount || ''}
+                  onChange={(e) => setInvoiceDiscount(parseFloat(e.target.value) || 0)}
+                />
               </div>
-              <div className="flex justify-between text-xl font-bold text-primary pt-3 border-t border-slate-200">
+
+              <div className="flex justify-between text-xl font-black text-primary pt-3">
                 <span className="uppercase tracking-tighter">Total Bill</span>
-                <span>{formatCurrency(totals.grandTotal)}</span>
+                <span className="drop-shadow-sm">{formatCurrency(totals.grandTotal)}</span>
               </div>
             </div>
 
             <div className="pt-2">
-              <label className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-2 block">Settlement Method</label>
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 block">Settlement Strategy</label>
               <div className="grid grid-cols-4 gap-1.5">
                 {(['Cash', 'Card', 'UPI', 'Credit'] as const).map(method => (
                   <button
                     key={method}
                     onClick={() => setPaymentMethod(method)}
                     className={cn(
-                      "py-2 rounded-lg text-[9px] font-bold uppercase transition-all border",
+                      "py-2 rounded-xl text-[9px] font-black uppercase transition-all border shadow-sm",
                       paymentMethod === method 
-                        ? "bg-primary border-primary text-white shadow-md" 
+                        ? "bg-primary border-primary text-white scale-[1.02]" 
                         : "bg-white border-slate-100 text-slate-400 hover:border-slate-200"
                     )}
                   >
@@ -517,19 +803,19 @@ const Billing: React.FC = () => {
             <div className="grid grid-cols-2 gap-3 pt-2">
               <button 
                 onClick={handlePrintDraft}
-                className="btn-secondary py-3 flex-1"
-                disabled={cart.length === 0 || !selectedCustomer}
+                className="bg-white border border-slate-200 text-slate-400 py-4 rounded-2xl font-black uppercase tracking-widest text-[9px] flex items-center justify-center gap-2 hover:bg-slate-50 transition-all shadow-sm"
+                disabled={cart.length === 0}
               >
                 <Printer size={14} />
-                <span className="text-[9px]">Draft</span>
+                Challan
               </button>
               <button 
-                className="btn-primary py-3 flex-1"
+                className="bg-primary text-white py-4 rounded-2xl font-black uppercase tracking-widest text-[9px] flex items-center justify-center gap-2 hover:bg-primary/90 transition-all shadow-lg shadow-primary/20 active:scale-95Disabled:opacity-50"
                 onClick={saveInvoice}
                 disabled={cart.length === 0 || !selectedCustomer}
               >
                 <Save size={14} />
-                <span className="text-[9px]">Issue</span>
+                Issue Bill
               </button>
             </div>
           </div>
