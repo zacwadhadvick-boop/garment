@@ -265,7 +265,7 @@ export const seedInitialData = () => {
         id: 'admin1',
         name: 'System Admin',
         empId: 'admin',
-        password: '987654', // In a real app this would be hashed
+        password: '12345', // In a real app this would be hashed
         role: 'Admin',
         active: true,
         createdAt: Date.now()
@@ -275,9 +275,9 @@ export const seedInitialData = () => {
   } else {
     // Migration: Update default admin password to the new requested one if it's still 'admin'
     const staff = storage.getStaff();
-    const adminIdx = staff.findIndex(s => s.empId === 'admin' && s.password === 'admin');
+    const adminIdx = staff.findIndex(s => s.empId === 'admin');
     if (adminIdx !== -1) {
-      staff[adminIdx].password = '987654';
+      staff[adminIdx].password = '12345';
       storage.saveStaff(staff);
     }
   }
